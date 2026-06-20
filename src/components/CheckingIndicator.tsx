@@ -13,7 +13,7 @@ export default function CheckingIndicator({ onManualCheck }: CheckingIndicatorPr
 
   const checkedCount = Object.keys(checkResults).length
   const totalActive = books.filter((b) => !b.isPaused).length
-  const withNewChapters = Object.values(checkResults).filter((r) => r.hasNewChapter).length
+  const withNewChapters = Object.values(checkResults).filter((arr) => arr.length > 0 && arr[0].hasNewChapter).length
 
   return (
     <div className="flex items-center justify-between px-4 py-2">

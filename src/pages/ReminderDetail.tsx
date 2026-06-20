@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, CheckCircle, Clock, Pause, Play, Trash2,
-  RefreshCw, Pencil, Check, X, Info,
+  RefreshCw, Pencil, Check, X,
 } from 'lucide-react'
 import { useBookStore } from '@/store/useBookStore'
 import StatusBadge from '@/components/StatusBadge'
@@ -15,7 +15,7 @@ export default function ReminderDetail() {
   const navigate = useNavigate()
   const book = useBookStore((s) => s.books.find((b) => b.id === bookId))
   const updateRecords = useBookStore((s) => bookId ? (s.updateRecords[bookId] || []) : [])
-  const checkResults = useBookStore((s) => bookId ? (s.checkResults[bookId] || null) : null)
+  const checkHistory = useBookStore((s) => s.getBookCheckHistory(bookId || ''))
   const markAsRead = useBookStore((s) => s.markAsRead)
   const markAsReadLater = useBookStore((s) => s.markAsReadLater)
   const pauseTracking = useBookStore((s) => s.pauseTracking)
@@ -164,21 +164,55 @@ export default function ReminderDetail() {
           </motion.div>
         )}
 
-        {checkResults && (
-          <div className="mt-3 rounded-xl border border-parchment-200 bg-white/50 px-3.5 py-2.5">
-            <div className="flex items-start gap-2">
-              <Info className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${
-                checkResults.hasNewChapter ? 'text-status-pending' : 'text-ink-400'
-              }`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-ink-700">
-                  检查判定：{checkResults.hasNewChapter ? '发现新章节' : '暂无新章节'}
-                </p>
-                <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">{checkResults.reason}</p>
-                {checkResults.checkedAt && (
-                  <p className="text-[10px] text-ink-400 mt-1">{timeAgo(checkResults.checkedAt)} · {checkResults.checkedAt.split('T')[1]?.slice(0, 5) || ''}</p>
-                )}
+        {checkHistory.length > 0 && (
+          <div className="mt-3 rounded-xl border border-parchment-200 bg-white/50">
+            <div className="px-3.5 py-2.5 border-b border-parchment-100 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5 text-ink-500" />
+                <p className="text-xs font-semibold text-ink-700">最近检查记录</p>
               </div>
+              <span className="text-[10px] text-ink-400">保留最近 10 次</span>
+            </div>
+            <div className="divide-y divide-parchment-100">
+              {checkHistory.map((result, idx) => {
+                const scheduleLabels: Record<string, string> = {
+                  daily: '每日',
+                  weekly: '每周',
+                  custom: '自定义',
+                }
+                return (
+                  <div key={idx} className="px-3.5 py-2.5">
+                    <div className="flex items-start gap-2">
+                      <div className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${
+                        result.hasNewChapter ? 'bg-status-pending' :
+                        result.reason.includes('断更') ? 'bg-status-discontinued' :
+                        result.reason.includes('间隔太短') ? 'bg-amber-500' : 'bg-ink-300'
+                      }`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-parchment-100 text-ink-600 px-1.5 py-0.5 rounded font-medium">
+                            {scheduleLabels[result.scheduleType] || result.scheduleType}
+                          </span>
+                          <span className={`text-[11px] font-medium ${
+                            result.hasNewChapter ? 'text-status-pending' :
+                            result.reason.includes('断更') ? 'text-status-discontinued' : 'text-ink-700'
+                          }`}>
+                            {result.hasNewChapter ? '发现新章节' :
+                             result.reason.includes('断更') ? '可能已断更' :
+                             result.reason.includes('间隔太短') ? '更新间隔太短' :
+                             result.reason.includes('尚未到') ? '未到更新时间' :
+                             result.reason.includes('不是更新日') ? '非更新日' : '暂无新章节'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{result.reason}</p>
+                        {result.checkedAt && (
+                          <p className="text-[10px] text-ink-400 mt-1">{timeAgo(result.checkedAt)} · {result.checkedAt.split('T')[1]?.slice(0, 5) || ''}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

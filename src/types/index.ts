@@ -21,6 +21,7 @@ export interface CheckResult {
   hasNewChapter: boolean
   newChaptersCount: number
   reason: string
+  scheduleType: 'daily' | 'weekly' | 'custom'
 }
 
 export interface QuietPeriodUpdate {

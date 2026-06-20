@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type {
   Book, UpdateRecord, AppSettings, QuietPeriod, ReadingTimeSlot,
   QuietPeriodUpdate, EveningSummary, CheckResult, NotificationItem,
-  UpdateRecordStatus, NotificationStatus,
+  UpdateRecordStatus, NotificationStatus, NotificationType,
 } from '@/types'
 import { getScheduleLabel } from '@/lib/utils'
 
@@ -13,7 +13,7 @@ interface BookStore {
   settings: AppSettings
   quietUpdates: QuietPeriodUpdate[]
   eveningSummaries: EveningSummary[]
-  checkResults: Record<string, CheckResult>
+  checkResults: Record<string, CheckResult[]>
   notifications: NotificationItem[]
   isChecking: boolean
   isInQuietMode: boolean
@@ -59,6 +59,7 @@ interface BookStore {
   addNotification: (item: Omit<NotificationItem, 'id' | 'status' | 'createdAt'> & Partial<Pick<NotificationItem, 'status' | 'createdAt'>>) => void
   setNotificationStatus: (id: string, status: NotificationStatus) => void
   markAllNotificationsAs: (status: NotificationStatus) => void
+  markNotificationsByFilterAs: (status: NotificationStatus, filter: { bookId?: string; type?: NotificationType; notifStatus?: NotificationStatus }) => void
   getUnreadNotificationCount: () => number
   getTodayNotifications: () => NotificationItem[]
 
@@ -79,6 +80,7 @@ const defaultSettings: AppSettings = {
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36)
+const MAX_CHECK_HISTORY = 10
 
 function getHoursSinceUpdate(lastUpdateTime: string): number {
   const lastUpdate = new Date(lastUpdateTime)
@@ -94,6 +96,19 @@ function isOverdue(scheduleType: string, daysSince: number): boolean {
   if (scheduleType === 'daily') return daysSince > 7
   if (scheduleType === 'weekly') return daysSince > 14
   return daysSince > 30
+}
+
+function computeMaxContinuousReadChapter(records: UpdateRecord[]): number | null {
+  const readRecords = records.filter((r) => r.status === 'read').sort((a, b) => a.chapter - b.chapter)
+  if (readRecords.length === 0) return null
+
+  let maxContinuous = 0
+  for (let i = 0; i < readRecords.length; i++) {
+    const expected = readRecords[0].chapter + i
+    if (readRecords[i].chapter !== expected) break
+    maxContinuous = readRecords[i].chapter
+  }
+  return maxContinuous
 }
 
 function computeBookStatus(book: Book, allRecords: UpdateRecord[] = []): Book['status'] {
@@ -129,6 +144,14 @@ function computeBookStatus(book: Book, allRecords: UpdateRecord[] = []): Book['s
   if (book.currentChapter < book.latestChapter) return 'pending'
 
   return 'normal'
+}
+
+function calibrateBookProgress(book: Book, records: UpdateRecord[]): { currentChapter: number; status: Book['status'] } {
+  const bookRecords = records.filter((r) => r.bookId === book.id)
+  const maxContinuous = computeMaxContinuousReadChapter(bookRecords)
+  const newCurrent = maxContinuous ?? book.currentChapter
+  const newStatus = computeBookStatus({ ...book, currentChapter: newCurrent }, bookRecords)
+  return { currentChapter: newCurrent, status: newStatus }
 }
 
 const SAMPLE_CHAPTER_TITLES = [
@@ -169,7 +192,7 @@ function determineCheckResult(book: Book): { shouldFindUpdate: boolean; reason: 
 
   const scheduleLabel = getScheduleLabel(scheduleType, scheduleTime, book.updateSchedule.days, book.updateSchedule.customNote)
   const expectation = book.updateExpectation
-  const expectationSuffix = expectation ? `。预期说明：${expectation}` : ''
+  const expectationSuffix = expectation ? `。预期：${expectation}` : ''
 
   if (isOverdue(scheduleType, daysSince)) {
     return {
@@ -195,18 +218,18 @@ function determineCheckResult(book: Book): { shouldFindUpdate: boolean; reason: 
     if (hoursSince < 2) {
       return {
         shouldFindUpdate: false,
-        reason: `距上次更新仅${Math.floor(hoursSince * 60)}分钟，尚未到更新间隔`,
+        reason: `距上次更新仅${Math.floor(hoursSince * 60)}分钟，更新间隔太短(${scheduleLabel})${expectationSuffix}`,
       }
     }
     if (!pastScheduledTime) {
       return {
         shouldFindUpdate: false,
-        reason: `尚未到预期更新时间(${scheduleTime})，继续等待${expectationSuffix}`,
+        reason: `尚未到预期更新时间(${scheduleTime})，继续等待(${scheduleLabel})${expectationSuffix}`,
       }
     }
     return {
       shouldFindUpdate: false,
-      reason: `距上次更新${Math.floor(hoursSince)}小时，尚未达到每日更新间隔${expectationSuffix}`,
+      reason: `距上次更新${Math.floor(hoursSince)}小时，尚未达到每日更新间隔(${scheduleLabel})${expectationSuffix}`,
     }
   }
 
@@ -227,13 +250,13 @@ function determineCheckResult(book: Book): { shouldFindUpdate: boolean; reason: 
     if (daysSince < 1) {
       return {
         shouldFindUpdate: false,
-        reason: `距上次更新不足1天，尚未到周更新间隔`,
+        reason: `距上次更新不足1天，更新间隔太短(${scheduleLabel})${expectationSuffix}`,
       }
     }
     if (!pastScheduledTime) {
       return {
         shouldFindUpdate: false,
-        reason: `今天是更新日但尚未到预期时间(${scheduleTime})${expectationSuffix}`,
+        reason: `今天是更新日但尚未到预期时间(${scheduleTime})，继续等待(${scheduleLabel})${expectationSuffix}`,
       }
     }
     return {
@@ -251,13 +274,17 @@ function determineCheckResult(book: Book): { shouldFindUpdate: boolean; reason: 
   if (daysSince < 1) {
     return {
       shouldFindUpdate: false,
-      reason: `距上次更新不足1天，继续等待`,
+      reason: `距上次更新不足1天，更新间隔太短(${scheduleLabel})${expectationSuffix}`,
     }
   }
   return {
     shouldFindUpdate: false,
     reason: `距上次更新${Math.floor(daysSince)}天，继续等待(${scheduleLabel})${expectationSuffix}`,
   }
+}
+
+function pushCheckResult(history: CheckResult[] = [], result: CheckResult): CheckResult[] {
+  return [result, ...history].slice(0, MAX_CHECK_HISTORY)
 }
 
 export const useBookStore = create<BookStore>()(
@@ -341,7 +368,6 @@ export const useBookStore = create<BookStore>()(
 
           const records = (state.updateRecords[id] || []).map((r) => ({ ...r, status: 'read' as const }))
           const allRecords = { ...state.updateRecords, [id]: records }
-          const newStatus = computeBookStatus({ ...book, currentChapter: book.latestChapter }, records)
 
           const updatedNotifications = state.notifications.map((n) => {
             if (n.type === 'newChapter' && n.bookId === id && n.status !== 'handled') {
@@ -350,10 +376,15 @@ export const useBookStore = create<BookStore>()(
             return n
           })
 
+          const { currentChapter, status } = calibrateBookProgress(
+            { ...book, currentChapter: book.latestChapter },
+            records
+          )
+
           return {
             books: state.books.map((b) =>
               b.id === id
-                ? { ...b, currentChapter: b.latestChapter, status: newStatus, checkedWithNewChapter: false }
+                ? { ...b, currentChapter, status, checkedWithNewChapter: false }
                 : b
             ),
             updateRecords: allRecords,
@@ -375,9 +406,12 @@ export const useBookStore = create<BookStore>()(
             return n
           })
 
+          const book = state.books.find((b) => b.id === id)
+          const newStatus = book ? computeBookStatus(book, records) : 'pending'
+
           return {
             books: state.books.map((b) =>
-              b.id === id ? { ...b, status: 'pending' as const } : b
+              b.id === id ? { ...b, status: newStatus } : b
             ),
             updateRecords: { ...state.updateRecords, [id]: records },
             notifications: updatedNotifications,
@@ -398,10 +432,10 @@ export const useBookStore = create<BookStore>()(
           const book = state.books.find((b) => b.id === id)
           if (!book) return state
           const records = state.updateRecords[id] || []
-          const newStatus = computeBookStatus(book, records)
+          const { currentChapter, status } = calibrateBookProgress(book, records)
           return {
             books: state.books.map((b) =>
-              b.id === id ? { ...b, isPaused: false, status: newStatus } : b
+              b.id === id ? { ...b, isPaused: false, currentChapter, status } : b
             ),
           }
         })
@@ -546,10 +580,13 @@ export const useBookStore = create<BookStore>()(
             updateRecords: { ...state.updateRecords, [bookId]: updated },
             notifications: updatedNotifications,
           }
-          const newStatus = computeBookStatus(book, updated)
+
+          const { currentChapter, status: newStatus } = calibrateBookProgress(book, updated)
+          const hasUnread = updated.some((r) => r.status === 'unread')
+
           return {
             books: state.books.map((b) =>
-              b.id === bookId ? { ...b, status: newStatus } : b
+              b.id === bookId ? { ...b, currentChapter, status: newStatus, checkedWithNewChapter: hasUnread && status !== 'unread' ? b.checkedWithNewChapter : (status === 'read' ? false : b.checkedWithNewChapter) } : b
             ),
             updateRecords: { ...state.updateRecords, [bookId]: updated },
             notifications: updatedNotifications,
@@ -676,6 +713,7 @@ export const useBookStore = create<BookStore>()(
             hasNewChapter,
             newChaptersCount: newCount,
             reason,
+            scheduleType: book.updateSchedule.type,
           }
           results.push(result)
 
@@ -683,7 +721,7 @@ export const useBookStore = create<BookStore>()(
           const latestBook = get().books.find((b) => b.id === book.id)
           const updatedBook = latestBook || book
           const currentRecords = get().updateRecords[book.id] || []
-          const newStatus = computeBookStatus(updatedBook, currentRecords)
+          const { status: newStatus } = calibrateBookProgress(updatedBook, currentRecords)
 
           if (prevBookStatus !== newStatus) {
             const statusLabels: Record<string, string> = {
@@ -710,7 +748,10 @@ export const useBookStore = create<BookStore>()(
                 ? { ...b, lastCheckedAt: now, checkedWithNewChapter: hasNewChapter, status: newStatus }
                 : b
             ),
-            checkResults: { ...state.checkResults, [book.id]: result },
+            checkResults: {
+              ...state.checkResults,
+              [book.id]: pushCheckResult(state.checkResults[book.id], result),
+            },
           }))
         }
 
@@ -777,11 +818,12 @@ export const useBookStore = create<BookStore>()(
           hasNewChapter,
           newChaptersCount: newCount,
           reason,
+          scheduleType: book.updateSchedule.type,
         }
 
         const latestBook = get().books.find((b) => b.id === bookId)
         const currentRecords = get().updateRecords[bookId] || []
-        const newBookStatus = latestBook ? computeBookStatus(latestBook, currentRecords) : book.status
+        const { status: newBookStatus } = calibrateBookProgress(latestBook || book, currentRecords)
 
         set((state) => ({
           books: state.books.map((b) =>
@@ -789,7 +831,10 @@ export const useBookStore = create<BookStore>()(
               ? { ...b, lastCheckedAt: now, checkedWithNewChapter: hasNewChapter, status: newBookStatus }
               : b
           ),
-          checkResults: { ...state.checkResults, [bookId]: result },
+          checkResults: {
+            ...state.checkResults,
+            [bookId]: pushCheckResult(state.checkResults[bookId], result),
+          },
         }))
 
         return result
@@ -806,7 +851,7 @@ export const useBookStore = create<BookStore>()(
 
           const updatedBooks = state.books.map((book) => {
             const records = state.updateRecords[book.id] || []
-            const newStatus = computeBookStatus(book, records)
+            const { currentChapter, status: newStatus } = calibrateBookProgress(book, records)
             if (book.status !== newStatus) {
               const hasTodayNotif = state.notifications.some(
                 (n) => n.type === 'statusChange' && n.bookId === book.id && n.createdAt.startsWith(today)
@@ -826,7 +871,7 @@ export const useBookStore = create<BookStore>()(
                 })
               }
             }
-            return { ...book, status: newStatus }
+            return { ...book, currentChapter, status: newStatus }
           })
 
           return {
@@ -932,9 +977,10 @@ export const useBookStore = create<BookStore>()(
 
             const book = state.books.find((b) => b.id === bookId)
             if (book) {
-              const newBookStatus = computeBookStatus(book, updated)
+              const { currentChapter, status: newBookStatus } = calibrateBookProgress(book, updated)
+              const hasUnread = updated.some((r) => r.status === 'unread')
               updatedBooks = state.books.map((b) =>
-                b.id === bookId ? { ...b, status: newBookStatus } : b
+                b.id === bookId ? { ...b, currentChapter, status: newBookStatus, checkedWithNewChapter: hasUnread } : b
               )
             }
           }
@@ -950,16 +996,28 @@ export const useBookStore = create<BookStore>()(
       },
 
       markAllNotificationsAs: (status) => {
+        get().markNotificationsByFilterAs(status, {})
+      },
+
+      markNotificationsByFilterAs: (status, filter) => {
         set((state) => {
           const recordStatus = recordStatusFromNotif(status)
-          let updatedRecords = { ...state.updateRecords }
 
-          const affectedBookChapters = state.notifications
-            .filter((n) => n.type === 'newChapter' && n.bookId && n.chapter != null && n.status !== status)
+          const affectedNotifs = state.notifications.filter((n) => {
+            if (filter.bookId && n.bookId !== filter.bookId) return false
+            if (filter.type && n.type !== filter.type) return false
+            if (filter.notifStatus && n.status !== filter.notifStatus) return false
+            if (n.status === status) return false
+            return true
+          })
+
+          const affectedBookChapters = affectedNotifs
+            .filter((n) => n.type === 'newChapter' && n.bookId && n.chapter != null)
             .map((n) => ({ bookId: n.bookId!, chapter: n.chapter! }))
 
           const affectedBookIds = new Set(affectedBookChapters.map((a) => a.bookId))
 
+          let updatedRecords = { ...state.updateRecords }
           for (const bookId of affectedBookIds) {
             const chapters = affectedBookChapters.filter((a) => a.bookId === bookId).map((a) => a.chapter)
             const records = state.updateRecords[bookId] || []
@@ -973,16 +1031,20 @@ export const useBookStore = create<BookStore>()(
             const book = state.books.find((b) => b.id === bookId)
             if (book) {
               const records = updatedRecords[bookId] || []
-              const newBookStatus = computeBookStatus(book, records)
+              const { currentChapter, status: newBookStatus } = calibrateBookProgress(book, records)
+              const hasUnread = records.some((r) => r.status === 'unread')
               updatedBooks = updatedBooks.map((b) =>
-                b.id === bookId ? { ...b, status: newBookStatus } : b
+                b.id === bookId ? { ...b, currentChapter, status: newBookStatus, checkedWithNewChapter: hasUnread } : b
               )
             }
           }
 
           return {
             books: updatedBooks,
-            notifications: state.notifications.map((n) => ({ ...n, status })),
+            notifications: state.notifications.map((n) => {
+              const isAffected = affectedNotifs.some((an) => an.id === n.id)
+              return isAffected ? { ...n, status } : n
+            }),
             updateRecords: updatedRecords,
           }
         })
@@ -998,8 +1060,7 @@ export const useBookStore = create<BookStore>()(
       },
 
       getBookCheckHistory: (bookId) => {
-        const result = get().checkResults[bookId]
-        return result ? [result] : []
+        return get().checkResults[bookId] || []
       },
     }),
     {
