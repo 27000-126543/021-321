@@ -66,7 +66,18 @@ export default function BookCard({ book }: BookCardProps) {
 
         <div className="mt-2 flex items-center justify-between text-xs text-ink-500">
           <span>{getScheduleLabel(book.updateSchedule.type, book.updateSchedule.time, book.updateSchedule.days, book.updateSchedule.customNote)}</span>
-          <span>{timeAgo(book.lastUpdateTime)}</span>
+          <div className="flex items-center gap-2">
+            {book.lastCheckedAt && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                book.checkedWithNewChapter
+                  ? 'bg-status-pending/10 text-status-pending font-medium'
+                  : 'bg-ink-50 text-ink-400'
+              }`}>
+                {book.checkedWithNewChapter ? '有新章' : '已检查'}
+              </span>
+            )}
+            <span>{timeAgo(book.lastUpdateTime)}</span>
+          </div>
         </div>
       </div>
     </motion.div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bell, BellOff, Volume2, VolumeX, Vibrate, Moon,
@@ -6,6 +6,9 @@ import {
   ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useBookStore } from '@/store/useBookStore'
+import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import EveningSummaryBanner from '@/components/EveningSummaryBanner'
+import QuietModeBanner from '@/components/QuietModeBanner'
 import type { QuietPeriod, ReadingTimeSlot } from '@/types'
 
 export default function Settings() {
@@ -16,6 +19,19 @@ export default function Settings() {
   const updateQuietPeriod = useBookStore((s) => s.updateQuietPeriod)
   const addReadingTimeSlot = useBookStore((s) => s.addReadingTimeSlot)
   const removeReadingTimeSlot = useBookStore((s) => s.removeReadingTimeSlot)
+  const recomputeAllBookStatuses = useBookStore((s) => s.recomputeAllBookStatuses)
+  const getActiveEveningSummary = useBookStore((s) => s.getActiveEveningSummary)
+  const markSummaryAsRead = useBookStore((s) => s.markSummaryAsRead)
+  const updateQuietModeState = useBookStore((s) => s.updateQuietModeState)
+
+  const { isInQuietMode } = useUpdateChecker()
+
+  const activeSummary = getActiveEveningSummary()
+
+  useEffect(() => {
+    recomputeAllBookStatuses()
+    updateQuietModeState()
+  }, [recomputeAllBookStatuses, updateQuietModeState])
 
   const [showAddQuiet, setShowAddQuiet] = useState(false)
   const [newQuietName, setNewQuietName] = useState('')
@@ -101,7 +117,21 @@ export default function Settings() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-24 scrollbar-hide">
-        <section className="mt-4">
+        {activeSummary && (
+          <div className="pt-3">
+            <EveningSummaryBanner
+              key={activeSummary.id}
+              summary={activeSummary}
+              onDismiss={() => markSummaryAsRead(activeSummary.id)}
+            />
+          </div>
+        )}
+
+        <div className={activeSummary ? 'mt-0' : 'mt-4'}>
+          <QuietModeBanner />
+        </div>
+
+        <section className={activeSummary ? 'mt-3' : 'mt-4'}>
           <div className="flex items-center gap-2 mb-3">
             <Moon className="h-4 w-4 text-ink-600" />
             <h2 className="text-sm font-semibold text-ink-900">安静模式</h2>

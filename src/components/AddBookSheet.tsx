@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, AlertCircle } from 'lucide-react'
 import { useBookStore } from '@/store/useBookStore'
 import { PLATFORMS, DAY_LABELS } from '@/types'
 import type { UpdateSchedule } from '@/types'
@@ -21,6 +21,31 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
   const [scheduleTime, setScheduleTime] = useState('22:00')
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5])
   const [customNote, setCustomNote] = useState('')
+  const [submitError, setSubmitError] = useState('')
+
+  const chapterValidation = useMemo(() => {
+    if (!currentChapter) {
+      return { valid: true, message: '' }
+    }
+    if (currentChapter.includes('.')) {
+      return { valid: false, message: '章节号不能包含小数' }
+    }
+    if (currentChapter.includes('-')) {
+      return { valid: false, message: '章节号不能为负数' }
+    }
+    const trimmed = currentChapter.trim()
+    if (!/^\d+$/.test(trimmed)) {
+      return { valid: false, message: '请输入有效的数字章节号' }
+    }
+    const num = parseInt(trimmed, 10)
+    if (num <= 0) {
+      return { valid: false, message: '章节号必须大于 0' }
+    }
+    if (num > 99999) {
+      return { valid: false, message: '章节号过大' }
+    }
+    return { valid: true, message: '' }
+  }, [currentChapter])
 
   const toggleDay = (day: number) => {
     setSelectedDays((prev) =>
@@ -29,13 +54,31 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
   }
 
   const handleSubmit = () => {
-    if (!title.trim() || !author.trim() || !currentChapter) return
+    setSubmitError('')
 
-    addBook({
+    if (!title.trim()) {
+      setSubmitError('请输入书名')
+      return
+    }
+    if (!author.trim()) {
+      setSubmitError('请输入作者名')
+      return
+    }
+    if (!currentChapter) {
+      setSubmitError('请输入章节号')
+      return
+    }
+    if (!chapterValidation.valid) {
+      setSubmitError(chapterValidation.message)
+      return
+    }
+
+    const chapterNum = parseInt(currentChapter.trim(), 10)
+    const success = addBook({
       title: title.trim(),
       author: author.trim(),
       platform,
-      currentChapter: parseInt(currentChapter, 10),
+      currentChapter: chapterNum,
       updateSchedule: {
         type: scheduleType,
         time: scheduleTime,
@@ -44,15 +87,20 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
       },
     })
 
-    setTitle('')
-    setAuthor('')
-    setPlatform(PLATFORMS[0])
-    setCurrentChapter('')
-    setScheduleType('daily')
-    setScheduleTime('22:00')
-    setSelectedDays([1, 2, 3, 4, 5])
-    setCustomNote('')
-    onClose()
+    if (success) {
+      setTitle('')
+      setAuthor('')
+      setPlatform(PLATFORMS[0])
+      setCurrentChapter('')
+      setScheduleType('daily')
+      setScheduleTime('22:00')
+      setSelectedDays([1, 2, 3, 4, 5])
+      setCustomNote('')
+      setSubmitError('')
+      onClose()
+    } else {
+      setSubmitError('添加失败，请检查章节号是否正确')
+    }
   }
 
   return (
@@ -126,13 +174,24 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-ink-600">当前读到第几章</label>
                 <input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={currentChapter}
-                  onChange={(e) => setCurrentChapter(e.target.value)}
+                  onChange={(e) => setCurrentChapter(e.target.value.replace(/[^\d]/g, ''))}
                   placeholder="输入章节号"
-                  className="w-full rounded-xl border border-parchment-200 bg-white px-3.5 py-2.5 text-sm font-mono text-ink-900 placeholder:text-parchment-300 focus:border-ink-600 focus:outline-none focus:ring-1 focus:ring-ink-600/20"
+                  className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm font-mono text-ink-900 placeholder:text-parchment-300 focus:outline-none focus:ring-1 ${
+                    currentChapter && !chapterValidation.valid
+                      ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
+                      : 'border-parchment-200 focus:border-ink-600 focus:ring-ink-600/20'
+                  }`}
                 />
+                {currentChapter && !chapterValidation.valid && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-red-500">
+                    <AlertCircle className="h-3 w-3" />
+                    {chapterValidation.message}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -195,9 +254,20 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
                 )}
               </div>
 
+              {submitError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2"
+                >
+                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                  <p className="text-xs text-red-600">{submitError}</p>
+                </motion.div>
+              )}
+
               <button
                 onClick={handleSubmit}
-                disabled={!title.trim() || !author.trim() || !currentChapter}
+                disabled={!title.trim() || !author.trim() || !currentChapter || !chapterValidation.valid}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-accent py-3 text-sm font-semibold text-white transition-all hover:bg-amber-dark disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4" />

@@ -10,6 +10,31 @@ export interface Book {
   lastUpdateTime: string
   createdAt: string
   isPaused: boolean
+  lastCheckedAt?: string
+  checkedWithNewChapter?: boolean
+}
+
+export interface CheckResult {
+  bookId: string
+  checkedAt: string
+  hasNewChapter: boolean
+  newChaptersCount: number
+}
+
+export interface QuietPeriodUpdate {
+  bookId: string
+  bookTitle: string
+  chapter: number
+  title: string
+  wordCount: number
+  receivedAt: string
+}
+
+export interface EveningSummary {
+  id: string
+  date: string
+  updates: QuietPeriodUpdate[]
+  read: boolean
 }
 
 export interface UpdateSchedule {
