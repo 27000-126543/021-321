@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-route
 import Bookshelf from '@/pages/Bookshelf'
 import ReminderDetail from '@/pages/ReminderDetail'
 import Settings from '@/pages/Settings'
+import NotificationCenter from '@/pages/NotificationCenter'
 import BottomNav from '@/components/BottomNav'
 
 function AppLayout() {
@@ -9,11 +10,12 @@ function AppLayout() {
   const showNav = location.pathname === '/' || location.pathname === '/settings'
 
   return (
-    <div className="mx-auto h-full max-w-[480px] bg-parchment-100 shadow-2xl relative">
+    <div className="mx-auto h-full max-w-[480px] bg-parchment-100 shadow-2xl relative overflow-hidden">
       <Routes>
         <Route path="/" element={<Bookshelf />} />
         <Route path="/reminder/:bookId" element={<ReminderDetail />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/notifications" element={<NotificationCenter />} />
       </Routes>
       {showNav && <BottomNav />}
     </div>

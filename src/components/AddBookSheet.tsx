@@ -27,21 +27,18 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
     if (!currentChapter) {
       return { valid: true, message: '' }
     }
-    if (currentChapter.includes('.')) {
-      return { valid: false, message: '章节号不能包含小数' }
-    }
-    if (currentChapter.includes('-')) {
-      return { valid: false, message: '章节号不能为负数' }
-    }
     const trimmed = currentChapter.trim()
+    if (!trimmed) {
+      return { valid: false, message: '请输入章节号' }
+    }
     if (!/^\d+$/.test(trimmed)) {
-      return { valid: false, message: '请输入有效的数字章节号' }
+      return { valid: false, message: '章节号必须是纯数字的正整数' }
     }
     const num = parseInt(trimmed, 10)
     if (num <= 0) {
       return { valid: false, message: '章节号必须大于 0' }
     }
-    if (num > 99999) {
+    if (num > 999999) {
       return { valid: false, message: '章节号过大' }
     }
     return { valid: true, message: '' }
@@ -64,12 +61,12 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
       setSubmitError('请输入作者名')
       return
     }
-    if (!currentChapter) {
+    if (!currentChapter.trim()) {
       setSubmitError('请输入章节号')
       return
     }
     if (!chapterValidation.valid) {
-      setSubmitError(chapterValidation.message)
+      setSubmitError(`章节号不合法：${chapterValidation.message}`)
       return
     }
 
@@ -99,7 +96,7 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
       setSubmitError('')
       onClose()
     } else {
-      setSubmitError('添加失败，请检查章节号是否正确')
+      setSubmitError('添加失败，请检查章节号是否为有效的正整数')
     }
   }
 
@@ -119,7 +116,7 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-parchment-50 scrollbar-hide"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[480px] max-h-[85vh] overflow-y-auto rounded-t-3xl bg-parchment-50 scrollbar-hide"
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-parchment-200 bg-parchment-50/95 px-5 py-4 backdrop-blur-sm">
               <h2 className="font-serif text-lg font-semibold text-ink-900">添加追更</h2>
@@ -172,14 +169,18 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-ink-600">当前读到第几章</label>
+                <label className="mb-1.5 block text-xs font-medium text-ink-600">
+                  当前读到第几章
+                  <span className="ml-1 text-parchment-300">（请输入正整数，如 123）</span>
+                </label>
                 <input
                   type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck={false}
                   value={currentChapter}
-                  onChange={(e) => setCurrentChapter(e.target.value.replace(/[^\d]/g, ''))}
-                  placeholder="输入章节号"
+                  onChange={(e) => setCurrentChapter(e.target.value)}
+                  placeholder="例如: 15"
                   className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm font-mono text-ink-900 placeholder:text-parchment-300 focus:outline-none focus:ring-1 ${
                     currentChapter && !chapterValidation.valid
                       ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
@@ -187,9 +188,14 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
                   }`}
                 />
                 {currentChapter && !chapterValidation.valid && (
-                  <p className="mt-1.5 flex items-center gap-1 text-xs text-red-500">
-                    <AlertCircle className="h-3 w-3" />
-                    {chapterValidation.message}
+                  <p className="mt-1.5 flex items-start gap-1 text-xs text-red-500">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{chapterValidation.message}。当前输入保留为「{currentChapter}」，请修改后再提交。</span>
+                  </p>
+                )}
+                {currentChapter && chapterValidation.valid && (
+                  <p className="mt-1.5 text-[11px] text-emerald-600">
+                    ✓ 第 {currentChapter} 章，有效
                   </p>
                 )}
               </div>
@@ -258,16 +264,19 @@ export default function AddBookSheet({ open, onClose }: AddBookSheetProps) {
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2"
+                  className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5"
                 >
-                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                  <p className="text-xs text-red-600">{submitError}</p>
+                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-red-700">无法加入书架</p>
+                    <p className="text-xs text-red-600 mt-0.5">{submitError}</p>
+                  </div>
                 </motion.div>
               )}
 
               <button
                 onClick={handleSubmit}
-                disabled={!title.trim() || !author.trim() || !currentChapter || !chapterValidation.valid}
+                disabled={!title.trim() || !author.trim() || !currentChapter.trim() || !chapterValidation.valid}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-accent py-3 text-sm font-semibold text-white transition-all hover:bg-amber-dark disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4" />

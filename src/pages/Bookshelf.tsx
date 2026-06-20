@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
-import { Search, Plus, BookOpen, ArrowUpDown, Sparkles } from 'lucide-react'
+import { Search, Plus, BookOpen, ArrowUpDown, Sparkles, Bell } from 'lucide-react'
 import { useBookStore } from '@/store/useBookStore'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import BookCard from '@/components/BookCard'
@@ -11,12 +12,14 @@ import CheckingIndicator from '@/components/CheckingIndicator'
 import type { SortOption } from '@/types'
 
 export default function Bookshelf() {
+  const navigate = useNavigate()
   const books = useBookStore((s) => s.books)
   const simulateUpdate = useBookStore((s) => s.simulateUpdate)
   const recomputeAllBookStatuses = useBookStore((s) => s.recomputeAllBookStatuses)
   const getActiveEveningSummary = useBookStore((s) => s.getActiveEveningSummary)
   const markSummaryAsRead = useBookStore((s) => s.markSummaryAsRead)
   const clearCheckedStatus = useBookStore((s) => s.clearCheckedStatus)
+  const getUnreadNotificationCount = useBookStore((s) => s.getUnreadNotificationCount)
 
   const { triggerCheck, isChecking, isInQuietMode } = useUpdateChecker()
 
@@ -26,6 +29,7 @@ export default function Bookshelf() {
   const [showSortMenu, setShowSortMenu] = useState(false)
 
   const activeSummary = getActiveEveningSummary()
+  const unreadNotifCount = getUnreadNotificationCount()
 
   useEffect(() => {
     recomputeAllBookStatuses()
@@ -58,7 +62,7 @@ export default function Bookshelf() {
     return result
   }, [books, search, sortBy])
 
-  const pendingCount = books.filter((b) => b.status === 'pending' && !b.isPaused).length
+  const pendingCount = books.filter((b) => (b.status === 'pending' || b.status === 'burst') && !b.isPaused).length
 
   const sortLabels: Record<SortOption, string> = {
     updateTime: '更新时间',
@@ -102,6 +106,17 @@ export default function Bookshelf() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/notifications')}
+              className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink-700 text-parchment-50 transition-colors hover:bg-ink-600"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadNotifCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-accent px-1 text-[9px] font-bold text-white">
+                  {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                </span>
+              )}
+            </button>
             {books.length > 0 && (
               <button
                 onClick={handleClearChecked}

@@ -12,6 +12,7 @@ export interface Book {
   isPaused: boolean
   lastCheckedAt?: string
   checkedWithNewChapter?: boolean
+  updateExpectation?: string
 }
 
 export interface CheckResult {
@@ -19,6 +20,7 @@ export interface CheckResult {
   checkedAt: string
   hasNewChapter: boolean
   newChaptersCount: number
+  reason: string
 }
 
 export interface QuietPeriodUpdate {
@@ -37,12 +39,34 @@ export interface EveningSummary {
   read: boolean
 }
 
+export type NotificationType = 'newChapter' | 'eveningSummary' | 'statusChange'
+export type NotificationStatus = 'unread' | 'handled' | 'later'
+
+export interface NotificationItem {
+  id: string
+  type: NotificationType
+  bookId?: string
+  bookTitle?: string
+  summaryId?: string
+  title: string
+  content: string
+  chapter?: number
+  chapterTitle?: string
+  wordCount?: number
+  fromStatus?: Book['status']
+  toStatus?: Book['status']
+  status: NotificationStatus
+  createdAt: string
+}
+
 export interface UpdateSchedule {
   type: 'daily' | 'weekly' | 'custom'
   time: string
   days?: number[]
   customNote?: string
 }
+
+export type UpdateRecordStatus = 'unread' | 'read' | 'later'
 
 export interface UpdateRecord {
   id: string
@@ -51,6 +75,7 @@ export interface UpdateRecord {
   title: string
   wordCount: number
   updatedAt: string
+  status: UpdateRecordStatus
 }
 
 export interface QuietPeriod {
@@ -75,6 +100,8 @@ export interface AppSettings {
 }
 
 export type SortOption = 'updateTime' | 'title' | 'status'
+
+export type NotificationFilter = 'all' | 'unread' | 'handled' | 'later'
 
 export const PLATFORMS = [
   '起点中文网',
